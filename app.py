@@ -9,8 +9,19 @@ from datetime import datetime
 import json
 from typing import Optional, Dict, Any
 
+# Configure logging
+logging.basicConfig(
+    level=os.getenv('LOG_LEVEL', 'INFO'),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.getenv('LOG_FILE', 'xenoscribe.log'))
+    ]
+)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__, static_folder='assets', static_url_path='/assets')
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB max file size
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 2 * 1024 * 1024 * 1024))  # 2GB max file size
 app.secret_key = os.urandom(24)  # For session management
 
 # Configuration
@@ -18,6 +29,8 @@ class Config:
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
     USE_OPENAI_API = os.getenv('USE_OPENAI_API', 'false').lower() == 'true'
     WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
+    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', os.path.join(tempfile.gettempdir(), 'xenoscribe_uploads'))
+    ALLOWED_EXTENSIONS = set(os.getenv('ALLOWED_EXTENSIONS', 'mp3,wav,mp4,avi,mov,mkv,flv,webm,m4a,aac,ogg').split(','))
 
 app.config.from_object(Config)
 
