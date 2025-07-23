@@ -34,7 +34,16 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='assets', static_url_path='/assets')
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 2 * 1024 * 1024 * 1024))  # 2GB max file size
+
+# Parse MAX_CONTENT_LENGTH safely
+def parse_max_content_length():
+    max_content = os.getenv('MAX_CONTENT_LENGTH', '').split('#')[0].strip()  # Remove comments
+    try:
+        return int(max_content) if max_content else 2 * 1024 * 1024 * 1024  # Default 2GB
+    except ValueError:
+        return 2 * 1024 * 1024 * 1024  # Default 2GB on error
+
+app.config['MAX_CONTENT_LENGTH'] = parse_max_content_length()
 app.secret_key = os.urandom(24)  # For session management
 
 # Configuration
