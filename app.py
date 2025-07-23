@@ -2,6 +2,7 @@ import os
 import tempfile
 import whisper
 import openai
+import hashlib
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 import logging
