@@ -99,7 +99,6 @@ def generate_srt(segments):
 def index():
     return render_template('index.html')
 
-@app.route('/transcribe', methods=['POST'])
 def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[str, Any]:
     """Transcribe audio file using OpenAI's Whisper API"""
     with open(file_path, 'rb') as audio_file:
@@ -124,6 +123,7 @@ def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[st
         'segments': segments
     }
 
+@app.route('/transcribe', methods=['POST'])
 def transcribe():
     try:
         if 'file' not in request.files:
@@ -148,44 +148,60 @@ def transcribe():
         
         logger.info(f"Transcribing file: {filename}")
         
-        # Transcribe with either local model or OpenAI API
-        if app.config['USE_OPENAI_API'] and app.config['OPENAI_API_KEY']:
-            if language == 'auto':
-                result = transcribe_file_with_openai(temp_path)
-            else:
+        try:
+            # Transcribe using OpenAI API if configured
+            if Config.USE_OPENAI_API and Config.OPENAI_API_KEY:
                 result = transcribe_file_with_openai(temp_path, language)
-        else:
-            # Local Whisper model
-            if language == 'auto':
-                result = model.transcribe(temp_path)
             else:
-                result = model.transcribe(temp_path, language=language)
-        
-        # Clean up temp file
-        os.unlink(temp_path)
-        
-        # Prepare response based on format
-        if output_format == 'srt':
-            srt_content = generate_srt(result['segments'])
-            response_data = {
-                'text': result['text'],
-                'srt': srt_content,
-                'language': result.get('language', 'en'),
-                'segments': result['segments']
-            }
-        else:
-            response_data = {
-                'text': result['text'],
-                'language': result.get('language', 'en'),
-                'segments': result['segments']
-            }
-        
-        logger.info(f"Transcription completed for {filename}")
-        return jsonify(response_data)
+                # Fall back to local Whisper model
+                model = whisper.load_model(Config.WHISPER_MODEL)
+                result = model.transcribe(temp_path, language=language if language != 'auto' else None)
+                
+                # Format segments to match OpenAI's response format
+                segments = [{
+                    'id': i,
+                    'start': segment['start'],
+                    'end': segment['end'],
+                    'text': segment['text'].strip()
+                } for i, segment in enumerate(result.get('segments', []))]
+                
+                result = {
+                    'text': result.get('text', ''),
+                    'language': language if language != 'auto' else 'en',
+                    'segments': segments
+                }
+            
+            # Generate SRT if requested
+            if output_format.lower() == 'srt':
+                srt_content = generate_srt(result['segments'])
+                response = jsonify({
+                    'filename': os.path.splitext(filename)[0] + '.srt',
+                    'srt': srt_content
+                })
+            else:
+                response = jsonify({
+                    'text': result['text'],
+                    'language': result['language'],
+                    'segments': result['segments']
+                })
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error during transcription: {str(e)}")
+            return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
+            
+        finally:
+            # Clean up temporary file
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {temp_path}: {str(e)}")
         
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
+        logger.error(f"Error in transcribe: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/download-srt', methods=['POST'])
 def download_srt():
