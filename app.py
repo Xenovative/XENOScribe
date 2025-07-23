@@ -14,14 +14,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure logging
+log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xenoscribe.log')
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+
+# Ensure log directory exists
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+# Configure logging
 logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
+    level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.getenv('LOG_FILE', 'xenoscribe.log'))
+        logging.FileHandler(log_file)
     ]
 )
+
+logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='assets', static_url_path='/assets')
