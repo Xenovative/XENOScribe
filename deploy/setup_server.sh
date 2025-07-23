@@ -63,7 +63,7 @@ fi
 
 # Create systemd service file
 echo -e "${GREEN}Creating systemd service...${NC}"
-cat > /etc/systemd/system/xenoscribe.service <<EOL
+cat > /etc/systemd/system/xenoscribe.service << 'EOL'
 [Unit]
 Description=XENOScribe Transcription Service
 After=network.target
@@ -71,14 +71,17 @@ After=network.target
 [Service]
 User=xenoscribe
 Group=xenoscribe
-WorkingDirectory=${APP_DIR}
-Environment="PATH=${APP_DIR}/venv/bin"
-ExecStart=${APP_DIR}/venv/bin/python ${APP_DIR}/app.py
+WorkingDirectory=APP_DIR_PLACEHOLDER
+Environment="PATH=APP_DIR_PLACEHOLDER/venv/bin"
+ExecStart=APP_DIR_PLACEHOLDER/venv/bin/python APP_DIR_PLACEHOLDER/app.py
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOL
+
+# Replace the placeholder with actual APP_DIR
+sed -i "s|APP_DIR_PLACEHOLDER|${APP_DIR}|g" /etc/systemd/system/xenoscribe.service
 
 # Set up Nginx
 echo -e "${GREEN}Configuring Nginx...${NC}"
