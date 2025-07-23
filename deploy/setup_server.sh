@@ -61,15 +61,47 @@ else
     exit 1
 fi
 
-# Create .env file if it doesn't exist
-if [ ! -f "${APP_DIR}/.env" ]; then
-    echo -e "${YELLOW}Creating .env file...${NC}"
-    cp ${APP_DIR}/.env.example ${APP_DIR}/.env
-    chown xenoscribe:xenoscribe ${APP_DIR}/.env
-    echo -e "${YELLOW}Please edit ${APP_DIR}/.env to configure your settings${NC}"
-    read -p "Press Enter to continue..."
-    ${EDITOR:-nano} ${APP_DIR}/.env
-fi
+# Create .env file with default values
+echo -e "${GREEN}Creating .env file with default values...${NC}"
+cat > "${APP_DIR}/.env" << 'EOL'
+# XENOScribe Configuration
+# Edit these values as needed
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=5000
+DEBUG=false
+
+# OpenAI Configuration
+# Set USE_OPENAI_API=true to use OpenAI's API instead of local model
+USE_OPENAI_API=false
+# Get your API key from https://platform.openai.com/account/api-keys
+OPENAI_API_KEY=your-api-key-here
+
+# Local Model Configuration (used when USE_OPENAI_API=false)
+# Options: tiny, base, small, medium, large (larger models are more accurate but slower)
+WHISPER_MODEL=base
+
+# File Upload Settings
+MAX_CONTENT_LENGTH=2147483648  # 2GB in bytes
+UPLOAD_FOLDER=/tmp/xenoscribe_uploads
+ALLOWED_EXTENSIONS=mp3,wav,mp4,avi,mov,mkv,flv,webm,m4a,aac,ogg
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=${APP_DIR}/xenoscribe.log
+EOL
+
+# Set permissions
+chown xenoscribe:xenoscribe "${APP_DIR}/.env"
+chmod 600 "${APP_DIR}/.env"
+
+echo -e "${YELLOW}Default .env file created at ${APP_DIR}/.env${NC}"
+echo -e "${YELLOW}You can edit it later if needed.${NC}"
+
+# Create upload directory
+mkdir -p "${UPLOAD_FOLDER:-/tmp/xenoscribe_uploads}"
+chown -R xenoscribe:xenoscribe "${UPLOAD_FOLDER:-/tmp/xenoscribe_uploads}"
 
 # Create systemd service file
 echo -e "${GREEN}Creating systemd service...${NC}"
@@ -95,6 +127,10 @@ sed -i "s|APP_DIR_PLACEHOLDER|${APP_DIR}|g" /etc/systemd/system/xenoscribe.servi
 
 # Set up Nginx
 echo -e "${GREEN}Configuring Nginx...${NC}"
+# Ensure Nginx directories exist
+mkdir -p /etc/nginx/sites-available
+mkdir -p /etc/nginx/sites-enabled
+
 cat > /etc/nginx/sites-available/xenoscribe << 'EOL'
 server {
     listen 80;
