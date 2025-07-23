@@ -105,7 +105,8 @@ chown -R xenoscribe:xenoscribe "${UPLOAD_FOLDER:-/tmp/xenoscribe_uploads}"
 
 # Create systemd service file
 echo -e "${GREEN}Creating systemd service...${NC}"
-cat > /etc/systemd/system/xenoscribe.service << 'EOL'
+# Create systemd service with environment file support
+cat > /etc/systemd/system/xenoscribe.service << EOL
 [Unit]
 Description=XENOScribe Transcription Service
 After=network.target
@@ -113,10 +114,22 @@ After=network.target
 [Service]
 User=xenoscribe
 Group=xenoscribe
-WorkingDirectory=APP_DIR_PLACEHOLDER
-Environment="PATH=APP_DIR_PLACEHOLDER/venv/bin"
-ExecStart=APP_DIR_PLACEHOLDER/venv/bin/python APP_DIR_PLACEHOLDER/app.py
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+Environment=PATH=${APP_DIR}/venv/bin:$PATH
+ExecStart=${APP_DIR}/venv/bin/python ${APP_DIR}/app.py
 Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=xenoscribe
+
+# Security options
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=${APP_DIR}/logs /tmp
 
 [Install]
 WantedBy=multi-user.target
@@ -131,13 +144,16 @@ echo -e "${GREEN}Configuring Nginx...${NC}"
 mkdir -p /etc/nginx/sites-available
 mkdir -p /etc/nginx/sites-enabled
 
-cat > /etc/nginx/sites-available/xenoscribe << 'EOL'
+# Get port from .env or use default 5000
+PORT=$(grep -E '^PORT=' "${APP_DIR}/.env" | cut -d'=' -f2 || echo "5000")
+
+cat > /etc/nginx/sites-available/xenoscribe << EOL
 server {
     listen 80;
     server_name _;  # This will be replaced
 
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass http://127.0.0.1:${PORT};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

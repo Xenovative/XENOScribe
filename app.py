@@ -8,6 +8,10 @@ import logging
 from datetime import datetime
 import json
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -184,4 +188,7 @@ def download_srt():
         return jsonify({'error': f'Download failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 5000))
+    debug = os.getenv('DEBUG', 'false').lower() == 'true'
+    app.run(debug=debug, host=host, port=port)
