@@ -2,13 +2,14 @@ import os
 import tempfile
 import whisper
 import openai
-from flask import Flask, request, jsonify, render_template, send_file, session
+from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 import logging
 from datetime import datetime
 import json
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from functools import wraps
 
 # Load environment variables first
 load_dotenv()
@@ -56,6 +57,14 @@ class Config:
 
 app.config.from_object(Config)
 
+# Authentication configuration
+app.config['USERS'] = {
+    os.getenv('ADMIN_USERNAME', 'admin'): {
+        'password': hashlib.sha256(os.getenv('ADMIN_PASSWORD', 'admin123').encode()).hexdigest(),
+        'name': 'Admin'
+    }
+}
+
 if Config.OPENAI_API_KEY and Config.USE_OPENAI_API:
     openai.api_key = Config.OPENAI_API_KEY
     logger.info("Using OpenAI Whisper API for transcription")
@@ -75,7 +84,16 @@ logger.info("Whisper model loaded successfully")
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'mp4', 'avi', 'mov', 'mkv', 'flv', 'webm', 'm4a', 'aac', 'ogg'}
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 def format_timestamp(seconds):
     """Convert seconds to SRT timestamp format"""
@@ -116,6 +134,37 @@ def generate_srt(segments):
 def index():
     return render_template('index.html')
 
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
+    user = app.config['USERS'].get(username)
+    if user and user['password'] == hashlib.sha256(password.encode()).hexdigest():
+        session['user'] = {
+            'username': username,
+            'name': user['name']
+        }
+        return jsonify({'message': 'Login successful', 'user': session['user']})
+    
+    return jsonify({'error': 'Invalid username or password'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def logout():
+    session.pop('user', None)
+    return jsonify({'message': 'Logout successful'})
+
+@app.route('/api/check_auth')
+def check_auth():
+    if 'user' in session:
+        return jsonify({'authenticated': True, 'user': session['user']})
+    return jsonify({'authenticated': False})
+
 def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[str, Any]:
     """Transcribe audio file using OpenAI's Whisper API"""
     with open(file_path, 'rb') as audio_file:
@@ -148,6 +197,7 @@ def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[st
     }
 
 @app.route('/transcribe', methods=['POST'])
+@login_required
 def transcribe():
     try:
         if 'file' not in request.files:

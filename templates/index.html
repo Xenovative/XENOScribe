@@ -672,5 +672,323 @@
             }
         }
     </script>
+
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>XENOscribe Authentication</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="authForm" onsubmit="return handleAuth(event)">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-block">
+                        <i class="fas fa-sign-in-alt"></i> Sign In
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Auth Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: #0a0a0a;
+            margin: 10% auto;
+            padding: 0;
+            border: 2px solid #00ff41;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 90%;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+            animation: modalFadeIn 0.3s ease-out;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal-header {
+            padding: 20px;
+            background: rgba(0, 255, 65, 0.1);
+            border-bottom: 1px solid #00ff41;
+            position: relative;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #00ff41;
+            font-family: 'Orbitron', monospace;
+            font-size: 1.5em;
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            color: #ff3366;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .close:hover {
+            color: #ff0066;
+            transform: rotate(90deg);
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #39ff14;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            color: #fff;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #39ff14;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .btn-block {
+            width: 100%;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .auth-error {
+            color: #ff3366;
+            margin: 15px 0 0;
+            padding: 10px;
+            text-align: center;
+            background: rgba(255, 51, 102, 0.1);
+            border-radius: 5px;
+            display: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .user-greeting {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            margin-top: 15px;
+            padding: 8px 15px;
+            background: rgba(0, 255, 65, 0.1);
+            border-radius: 5px;
+            border-left: 3px solid #00ff41;
+        }
+        
+        .user-greeting span {
+            margin-right: 15px;
+            color: #39ff14;
+            font-weight: 600;
+        }
+        
+        .btn-sm {
+            padding: 5px 12px;
+            font-size: 0.85em;
+            margin: 0;
+        }
+        
+        /* Make the modal more prominent */
+        .modal-content {
+            transform: scale(1.05);
+            transition: transform 0.3s ease;
+        }
+        
+        .modal-content:hover {
+            transform: scale(1.06);
+        }
+    </style>
+
+    <script>
+        // Global auth state
+        let isAuthenticated = false;
+        let currentUser = null;
+        const authModal = document.getElementById('authModal');
+        const errorElement = document.createElement('div');
+        errorElement.className = 'auth-error';
+        document.querySelector('#authForm').appendChild(errorElement);
+
+        // Check authentication status on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/check_auth');
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    isAuthenticated = true;
+                    currentUser = data.user;
+                    authModal.style.display = 'none';
+                    document.querySelector('.container').style.display = 'block';
+                    updateUIForAuth(true);
+                } else {
+                    showAuthModal();
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                showAuthModal();
+            }
+        }
+
+        // Show authentication modal
+        function showAuthModal() {
+            authModal.style.display = 'block';
+            document.querySelector('.container').style.display = 'none';
+        }
+
+        // Update UI based on auth state
+        function updateUIForAuth(authenticated) {
+            const authElements = document.querySelectorAll('.auth-required');
+            authElements.forEach(el => {
+                el.style.display = authenticated ? 'block' : 'none';
+            });
+
+            if (authenticated && currentUser) {
+                const userGreeting = document.createElement('div');
+                userGreeting.className = 'user-greeting';
+                userGreeting.innerHTML = `
+                    <span>Welcome, ${currentUser.name || currentUser.username}!</span>
+                    <button onclick="logout()" class="btn btn-sm">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                `;
+                
+                const header = document.querySelector('.header');
+                const existingGreeting = document.querySelector('.user-greeting');
+                if (existingGreeting) {
+                    existingGreeting.replaceWith(userGreeting);
+                } else {
+                    header.appendChild(userGreeting);
+                }
+            }
+        }
+
+        // Handle login form submission
+        async function handleAuth(event) {
+            event.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showError('Please enter both username and password');
+                return false;
+            }
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+                
+                // Update UI
+                isAuthenticated = true;
+                currentUser = data.user;
+                authModal.style.display = 'none';
+                document.querySelector('.container').style.display = 'block';
+                updateUIForAuth(true);
+                
+                // Clear form
+                document.getElementById('authForm').reset();
+                errorElement.style.display = 'none';
+                
+            } catch (error) {
+                showError(error.message || 'Login failed. Please try again.');
+            }
+            
+            return false;
+        }
+        
+        // Handle logout
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    isAuthenticated = false;
+                    currentUser = null;
+                    showAuthModal();
+                    updateUIForAuth(false);
+                }
+            } catch (error) {
+                console.error('Logout failed:', error);
+                showError('Logout failed. Please try again.');
+            }
+        }
+        
+        // Show error message in auth form
+        function showError(message) {
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+            setTimeout(() => {
+                errorElement.style.opacity = '0';
+                setTimeout(() => {
+                    errorElement.style.display = 'none';
+                    errorElement.style.opacity = '1';
+                }, 300);
+            }, 3000);
+        }
+        
+        // Initialize auth check when page loads
+        document.addEventListener('DOMContentLoaded', checkAuth);
+    </script>
 </body>
 </html>
