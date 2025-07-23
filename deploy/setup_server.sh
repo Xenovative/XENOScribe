@@ -46,10 +46,10 @@ cp -r . ${APP_DIR}/
 chown -R xenoscribe:xenoscribe ${APP_DIR}
 
 # Set up Python virtual environment
-echo -e "${GREEN}Setting up Python virtual environment...${NC}
-sudo -u xenoscribe python3 -m venv ${APP_DIR}/venv
-${APP_DIR}/venv/bin/pip install --upgrade pip
-${APP_DIR}/venv/bin/pip install -r ${APP_DIR}/requirements.txt
+echo -e "${GREEN}Setting up Python virtual environment...${NC}"
+sudo -u xenoscribe python3 -m venv "${APP_DIR}/venv"
+"${APP_DIR}/venv/bin/pip" install --upgrade pip
+"${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
 
 # Create .env file if it doesn't exist
 if [ ! -f "${APP_DIR}/.env" ]; then
