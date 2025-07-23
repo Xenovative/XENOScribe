@@ -61,9 +61,10 @@ else
     exit 1
 fi
 
-# Create .env file with default values
-echo -e "${GREEN}Creating .env file with default values...${NC}"
-cat > "${APP_DIR}/.env" << 'EOL'
+# Create .env file if it doesn't exist
+if [ ! -f "${APP_DIR}/.env" ]; then
+    echo -e "${GREEN}Creating .env file with default values...${NC}"
+    cat > "${APP_DIR}/.env" << 'EOL'
 # XENOScribe Configuration
 # Edit these values as needed
 
@@ -92,12 +93,13 @@ LOG_LEVEL=INFO
 LOG_FILE=${APP_DIR}/xenoscribe.log
 EOL
 
-# Set permissions
-chown xenoscribe:xenoscribe "${APP_DIR}/.env"
-chmod 600 "${APP_DIR}/.env"
-
-echo -e "${YELLOW}Default .env file created at ${APP_DIR}/.env${NC}"
-echo -e "${YELLOW}You can edit it later if needed.${NC}"
+    # Set permissions
+    chown xenoscribe:xenoscribe "${APP_DIR}/.env"
+    chmod 600 "${APP_DIR}/.env"
+    echo -e "${YELLOW}Default .env file created at ${APP_DIR}/.env${NC}"
+else
+    echo -e "${GREEN}Using existing .env file at ${APP_DIR}/.env${NC}"
+fi
 
 # Create upload directory
 mkdir -p "${UPLOAD_FOLDER:-/tmp/xenoscribe_uploads}"
@@ -154,20 +156,62 @@ mkdir -p /etc/nginx/sites-enabled
 PORT=$(grep -E '^PORT=' "${APP_DIR}/.env" | cut -d'=' -f2 || echo "5000")
 
 cat > /etc/nginx/sites-available/xenoscribe << EOL
+# HTTP server - redirect to HTTPS
 server {
     listen 80;
-    server_name _;  # This will be replaced
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
 
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    server_name ${DOMAIN};
+
+    # SSL configuration
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${DOMAIN}/chain.pem;
+
+    # SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256';
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+
+    # Security headers
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Frame-Options DENY;
+    add_header Referrer-Policy "strict-origin";
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Proxy configuration
     location / {
         proxy_pass http://127.0.0.1:${PORT};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 300;
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
     }
 
     # Increase max upload size to 2G
     client_max_body_size 2G;
+
+    # Disable access to hidden files
+    location ~ /\. {
+        deny all;
+    }
 }
 EOL
 
