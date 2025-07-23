@@ -82,23 +82,26 @@ EOL
 
 # Set up Nginx
 echo -e "${GREEN}Configuring Nginx...${NC}"
-cat > /etc/nginx/sites-available/xenoscribe <<EOL
+cat > /etc/nginx/sites-available/xenoscribe << 'EOL'
 server {
     listen 80;
-    server_name ${DOMAIN};
+    server_name _;  # This will be replaced
 
     location / {
         proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Increase max upload size to 2G
     client_max_body_size 2G;
 }
 EOL
+
+# Replace the server_name in the Nginx config
+sed -i "s/server_name _;/server_name ${DOMAIN};/" /etc/nginx/sites-available/xenoscribe
 
 # Enable Nginx site
 ln -sf /etc/nginx/sites-available/xenoscribe /etc/nginx/sites-enabled/
