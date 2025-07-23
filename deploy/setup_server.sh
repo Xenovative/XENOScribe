@@ -122,20 +122,20 @@ systemctl start xenoscribe
 
 # Set up Certbot for SSL
 echo -e "${YELLOW}Would you like to set up SSL with Let's Encrypt? (y/n):${NC}"
-read SETUP_SSL
+read -r SETUP_SSL
 
 if [ "$SETUP_SSL" = "y" ] || [ "$SETUP_SSL" = "Y" ]; then
     echo -e "${GREEN}Installing Certbot...${NC}"
     apt-get install -y certbot python3-certbot-nginx
     
     echo -e "${GREEN}Obtaining SSL certificate...${NC}"
-    certbot --nginx -d ${DOMAIN}
+    certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m admin@"${DOMAIN}" --redirect
     
     # Set up auto-renewal
     (crontab -l 2>/dev/null; echo "0 12 * * * /usr/bin/certbot renew --quiet") | crontab -
     
-    echo -e "${GREEN}SSL certificate installed and auto-renewal configured.${NC}
-    Your site will be available at: https://${DOMAIN}"
+    echo -e "${GREEN}SSL certificate installed and auto-renewal configured.${NC}"
+    echo -e "Your site will be available at: https://${DOMAIN}"
 else
     echo -e "${YELLOW}SSL not configured. Your site will be available at: http://${DOMAIN}${NC}"
 fi
