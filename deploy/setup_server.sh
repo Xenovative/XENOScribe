@@ -39,21 +39,25 @@ APP_DIR="/opt/xenoscribe"
 echo -e "${GREEN}Setting up application in ${APP_DIR}...${NC}"
 mkdir -p ${APP_DIR}
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
 # Copy application files
-echo -e "${GREEN}Copying application files...${NC}"
+echo -e "${GREEN}Copying application files from ${PROJECT_DIR}...${NC}"
 # Copy only necessary files and directories
-cp -r app.py requirements.txt .env.example assets/ templates/ ${APP_DIR}/
+cp -r "${PROJECT_DIR}/app.py" "${PROJECT_DIR}/requirements.txt" "${PROJECT_DIR}/.env.example" "${PROJECT_DIR}/assets" "${PROJECT_DIR}/templates" "${APP_DIR}/"
 chown -R xenoscribe:xenoscribe ${APP_DIR}
 
 # Set up Python virtual environment
 echo -e "${GREEN}Setting up Python virtual environment...${NC}"
 sudo -u xenoscribe python3 -m venv "${APP_DIR}/venv"
-# Install requirements from the current directory first, then from the copied location
-if [ -f "requirements.txt" ]; then
+# Install requirements from the project directory
+if [ -f "${PROJECT_DIR}/requirements.txt" ]; then
     "${APP_DIR}/venv/bin/pip" install --upgrade pip
-    "${APP_DIR}/venv/bin/pip" install -r "requirements.txt"
+    "${APP_DIR}/venv/bin/pip" install -r "${PROJECT_DIR}/requirements.txt"
 else
-    echo -e "${RED}Error: requirements.txt not found in the current directory${NC}"
+    echo -e "${RED}Error: requirements.txt not found in ${PROJECT_DIR}${NC}"
     exit 1
 fi
 
