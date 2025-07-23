@@ -197,17 +197,20 @@ def transcribe():
             
             # Generate SRT if requested
             if output_format.lower() == 'srt':
-                srt_content = generate_srt(result['segments'])
-                response = jsonify({
+                srt_content = generate_srt(result.get('segments', []))
+                response_data = {
                     'filename': os.path.splitext(filename)[0] + '.srt',
                     'srt': srt_content
-                })
+                }
             else:
-                response = jsonify({
-                    'text': result['text'],
-                    'language': result['language'],
-                    'segments': result['segments']
-                })
+                response_data = {
+                    'text': result.get('text', ''),
+                    'language': result.get('language', language if language != 'auto' else 'en'),
+                    'segments': result.get('segments', [])
+                }
+            
+            logger.info(f"Transcription successful for {filename}")
+            response = jsonify(response_data)
             
             return response
             

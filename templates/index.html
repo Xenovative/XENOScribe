@@ -605,12 +605,29 @@
 
         function showResult(data) {
             transcriptionResult = data;
-            document.getElementById('resultText').textContent = data.text;
-            document.getElementById('resultSection').style.display = 'block';
             
-            // Show download button if SRT format was selected
-            if (data.srt) {
+            // Always show the result section
+            const resultSection = document.getElementById('resultSection');
+            resultSection.style.display = 'block';
+            
+            // Handle different response formats
+            if (data.srt !== undefined) {
+                // For SRT format
+                document.getElementById('resultText').textContent = data.srt;
                 document.getElementById('downloadBtn').style.display = 'inline-flex';
+            } else if (data.text !== undefined) {
+                // For plain text format
+                document.getElementById('resultText').textContent = data.text;
+                document.getElementById('downloadBtn').style.display = 'none';
+            } else if (data.segments && Array.isArray(data.segments)) {
+                // For segmented response
+                const text = data.segments.map(seg => seg.text).join('\n');
+                document.getElementById('resultText').textContent = text;
+                document.getElementById('downloadBtn').style.display = 'none';
+            } else {
+                // Fallback for unexpected format
+                showError('Received unexpected response format');
+                console.error('Unexpected response format:', data);
             }
         }
 
