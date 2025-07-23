@@ -38,18 +38,24 @@ fi
 APP_DIR="/opt/xenoscribe"
 echo -e "${GREEN}Setting up application in ${APP_DIR}...${NC}"
 mkdir -p ${APP_DIR}
-chown xenoscribe:xenoscribe ${APP_DIR}
 
 # Copy application files
 echo -e "${GREEN}Copying application files...${NC}"
-cp -r . ${APP_DIR}/
+# Copy only necessary files and directories
+cp -r app.py requirements.txt .env.example assets/ templates/ ${APP_DIR}/
 chown -R xenoscribe:xenoscribe ${APP_DIR}
 
 # Set up Python virtual environment
 echo -e "${GREEN}Setting up Python virtual environment...${NC}"
 sudo -u xenoscribe python3 -m venv "${APP_DIR}/venv"
-"${APP_DIR}/venv/bin/pip" install --upgrade pip
-"${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
+# Install requirements from the current directory first, then from the copied location
+if [ -f "requirements.txt" ]; then
+    "${APP_DIR}/venv/bin/pip" install --upgrade pip
+    "${APP_DIR}/venv/bin/pip" install -r "requirements.txt"
+else
+    echo -e "${RED}Error: requirements.txt not found in the current directory${NC}"
+    exit 1
+fi
 
 # Create .env file if it doesn't exist
 if [ ! -f "${APP_DIR}/.env" ]; then
