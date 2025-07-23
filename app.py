@@ -79,21 +79,38 @@ def allowed_file(filename):
 
 def format_timestamp(seconds):
     """Convert seconds to SRT timestamp format"""
+    if seconds is None:
+        return "00:00:00,000"
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     millisecs = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
 
+def get_segment_value(segment, key, default=None):
+    """Safely get value from segment whether it's a dict or object"""
+    if hasattr(segment, key):  # Object access
+        return getattr(segment, key, default)
+    return segment.get(key, default)  # Dictionary access
+
 def generate_srt(segments):
     """Generate SRT format from Whisper segments"""
+    if not segments:
+        return ""
+        
     srt_content = ""
     for i, segment in enumerate(segments, 1):
-        start_time = format_timestamp(segment['start'])
-        end_time = format_timestamp(segment['end'])
-        text = segment['text'].strip()
+        start = get_segment_value(segment, 'start', 0)
+        end = get_segment_value(segment, 'end', 0)
+        text = get_segment_value(segment, 'text', '').strip()
+        
+        if not text:  # Skip empty segments
+            continue
+            
+        start_time = format_timestamp(start)
+        end_time = format_timestamp(end)
         srt_content += f"{i}\n{start_time} --> {end_time}\n{text}\n\n"
-    return srt_content
+    return srt_content.strip()
 
 @app.route('/')
 def index():
@@ -160,9 +177,9 @@ def transcribe():
                 # Format segments to match OpenAI's response format
                 segments = [{
                     'id': i,
-                    'start': segment['start'],
-                    'end': segment['end'],
-                    'text': segment['text'].strip()
+                    'start': segment.start,
+                    'end': segment.end,
+                    'text': segment.text.strip()
                 } for i, segment in enumerate(result.get('segments', []))]
                 
                 result = {
