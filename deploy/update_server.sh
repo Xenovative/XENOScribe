@@ -65,13 +65,12 @@ rsync -av --delete \
     "${PROJECT_DIR}/templates/" \
     "${APP_DIR}/"
 
-# Ensure required directories exist
-mkdir -p "${APP_DIR}/assets" "${APP_DIR}/templates"
-
-# Set permissions
+# Ensure required directories exist with proper permissions
+mkdir -p "${APP_DIR}/assets" "${APP_DIR}/templates" "${APP_DIR}/logs"
 chown -R xenoscribe:xenoscribe "${APP_DIR}"
-chmod 644 "${APP_DIR}/"*.py "${APP_DIR}/"*.txt 2>/dev/null || true
-chmod 755 "${APP_DIR}" "${APP_DIR}/assets" "${APP_DIR}/templates"
+chmod 755 "${APP_DIR}"
+find "${APP_DIR}" -type d -exec chmod 755 {} \;
+find "${APP_DIR}" -type f -name "*.py" -o -name "*.txt" -o -name "*.md" | xargs chmod 644 2>/dev/null || true
 
 # Update Python dependencies
 echo -e "${GREEN}Updating Python dependencies...${NC}"

@@ -105,6 +105,10 @@ chown -R xenoscribe:xenoscribe "${UPLOAD_FOLDER:-/tmp/xenoscribe_uploads}"
 
 # Create systemd service file
 echo -e "${GREEN}Creating systemd service...${NC}"
+# Create required directories
+mkdir -p "${APP_DIR}/logs"
+chown -R xenoscribe:xenoscribe "${APP_DIR}/logs"
+
 # Create systemd service with environment file support
 cat > /etc/systemd/system/xenoscribe.service << EOL
 [Unit]
@@ -130,6 +134,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=${APP_DIR}/logs /tmp
+RuntimeDirectory=xenoscribe
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
