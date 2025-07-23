@@ -119,7 +119,7 @@ def index():
 def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[str, Any]:
     """Transcribe audio file using OpenAI's Whisper API"""
     with open(file_path, 'rb') as audio_file:
-        transcript = openai.audio.transcriptions.create(
+        response = openai.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             language=language if language != 'auto' else None,
@@ -127,16 +127,23 @@ def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[st
             timestamp_granularities=["segment"]
         )
     
-    segments = [{
-        'id': i,
-        'start': segment['start'],
-        'end': segment['end'],
-        'text': segment['text'].strip()
-    } for i, segment in enumerate(transcript.segments)]
+    # Extract the data we need from the response
+    text = getattr(response, 'text', '')
+    language = getattr(response, 'language', language if language != 'auto' else 'en')
+    
+    # Handle segments safely
+    segments = []
+    if hasattr(response, 'segments'):
+        segments = [{
+            'id': i,
+            'start': getattr(segment, 'start', 0),
+            'end': getattr(segment, 'end', 0),
+            'text': getattr(segment, 'text', '').strip()
+        } for i, segment in enumerate(getattr(response, 'segments', []))]
     
     return {
-        'text': transcript.text,
-        'language': transcript.language,
+        'text': text,
+        'language': language,
         'segments': segments
     }
 
