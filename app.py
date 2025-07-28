@@ -5,11 +5,11 @@ import openai
 import hashlib
 import signal
 import time
+import re
+import unicodedata
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
-from werkzeug.utils import secure_filename
 import logging
 from datetime import datetime
-import json
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from functools import wraps
@@ -37,7 +37,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='assets', static_url_path='/assets')
+app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False  # Enable Unicode in JSON responses
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Set cache control for static files
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # Enable template auto reload
+app.config['STATIC_FOLDER'] = 'assets'  # Set static folder
+app.config['STATIC_URL_PATH'] = '/assets'  # Set static URL path
 
 # Parse MAX_CONTENT_LENGTH safely
 def parse_max_content_length():
@@ -89,6 +94,55 @@ ALLOWED_EXTENSIONS = {'mp3', 'wav', 'mp4', 'avi', 'mov', 'mkv', 'flv', 'webm', '
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+def secure_unicode_filename(filename):
+    """Secure filename while preserving Unicode characters like Chinese"""
+    if not filename:
+        return 'unnamed'
+    
+    # Normalize Unicode characters
+    filename = unicodedata.normalize('NFC', filename)
+    
+    # Remove or replace dangerous characters while keeping Unicode
+    # Remove path separators and dangerous characters
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    
+    # Remove control characters
+    filename = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', filename)
+    
+    # Trim whitespace and dots from start/end
+    filename = filename.strip(' .')
+    
+    # Ensure we have something left
+    if not filename:
+        return 'unnamed'
+    
+    # Limit length (keeping in mind Unicode characters may be multi-byte)
+    if len(filename.encode('utf-8')) > 200:
+        # Truncate while preserving extension
+        name, ext = os.path.splitext(filename)
+        max_name_bytes = 200 - len(ext.encode('utf-8'))
+        
+        # Truncate name to fit byte limit
+        name_bytes = name.encode('utf-8')
+        if len(name_bytes) > max_name_bytes:
+            # Find safe truncation point
+            truncated = name_bytes[:max_name_bytes]
+            # Avoid cutting in middle of Unicode character
+            try:
+                name = truncated.decode('utf-8')
+            except UnicodeDecodeError:
+                # Find last complete character
+                for i in range(len(truncated) - 1, -1, -1):
+                    try:
+                        name = truncated[:i].decode('utf-8')
+                        break
+                    except UnicodeDecodeError:
+                        continue
+        
+        filename = name + ext
+    
+    return filename
 
 def login_required(f):
     @wraps(f)
@@ -197,14 +251,36 @@ def check_auth():
 
 def transcribe_file_with_openai(file_path: str, language: str = None) -> Dict[str, Any]:
     """Transcribe audio file using OpenAI's Whisper API"""
-    with open(file_path, 'rb') as audio_file:
-        response = openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language=language if language != 'auto' else None,
-            response_format='verbose_json',
-            timestamp_granularities=["segment"]
-        )
+    try:
+        # Validate file exists and get size
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        file_size = os.path.getsize(file_path)
+        logger.info(f"OpenAI API: Processing file size: {file_size / (1024*1024):.1f} MB")
+        
+        # OpenAI has a 25MB limit for audio files
+        if file_size > 25 * 1024 * 1024:
+            raise ValueError("File size exceeds OpenAI's 25MB limit. Please use a smaller file or local Whisper model.")
+        
+        # Get file extension for proper content type
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        with open(file_path, 'rb') as audio_file:
+            # Create a proper file tuple with filename for OpenAI API
+            file_name = f"audio{file_ext}"
+            
+            response = openai.audio.transcriptions.create(
+                model="whisper-1",
+                file=(file_name, audio_file, f"audio/{file_ext[1:]}"),  # Proper MIME type
+                language=language if language != 'auto' else None,
+                response_format='verbose_json',
+                timestamp_granularities=["segment"]
+            )
+            
+    except Exception as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        raise
     
     # Extract the data we need from the response
     text = getattr(response, 'text', '')
@@ -244,25 +320,63 @@ def transcribe():
         language = request.form.get('language', 'auto')
         output_format = request.form.get('format', 'text')
         
-        # Save uploaded file temporarily
-        filename = secure_filename(file.filename)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
+        # Save uploaded file temporarily with Unicode support
+        original_filename = file.filename or 'unnamed'
+        filename = secure_unicode_filename(original_filename)
+        if not filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+            
+        # Validate file extension
+        file_ext = os.path.splitext(filename)[1].lower()
+        if not file_ext:
+            return jsonify({'error': 'File must have a valid extension'}), 400
+            
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
             file.save(temp_file.name)
             temp_path = temp_file.name
         
-        # Get file size for logging
+        # Validate file was saved properly
+        if not os.path.exists(temp_path):
+            return jsonify({'error': 'Failed to save uploaded file'}), 500
+            
+        # Get file size for logging and validation
         file_size = os.path.getsize(temp_path)
-        logger.info(f"Transcribing file: {filename} (Size: {file_size / (1024*1024):.1f} MB)")
+        if file_size == 0:
+            return jsonify({'error': 'Uploaded file is empty'}), 400
+            
+        logger.info(f"Transcribing file: {filename} (Size: {file_size / (1024*1024):.1f} MB, Extension: {file_ext})")
         
         start_time = time.time()
         
         try:
             # Transcribe using OpenAI API if configured
             if Config.USE_OPENAI_API and Config.OPENAI_API_KEY:
-                logger.info("Using OpenAI Whisper API for transcription")
-                result = transcribe_file_with_openai(temp_path, language)
+                try:
+                    logger.info("Using OpenAI Whisper API for transcription")
+                    result = transcribe_file_with_openai(temp_path, language)
+                except Exception as openai_error:
+                    logger.warning(f"OpenAI API failed: {str(openai_error)}")
+                    logger.info("Falling back to local Whisper model")
+                    
+                    # Fallback to local Whisper model
+                    model = whisper.load_model(Config.WHISPER_MODEL)
+                    result = model.transcribe(temp_path, language=language if language != 'auto' else None)
+                    
+                    # Format segments to match OpenAI's response format
+                    segments = [{
+                        'id': i,
+                        'start': segment.start,
+                        'end': segment.end,
+                        'text': segment.text.strip()
+                    } for i, segment in enumerate(result.get('segments', []))]
+                    
+                    result = {
+                        'text': result.get('text', ''),
+                        'language': language if language != 'auto' else 'en',
+                        'segments': segments
+                    }
             else:
-                # Fall back to local Whisper model
+                # Use local Whisper model
                 logger.info(f"Using local Whisper model: {Config.WHISPER_MODEL}")
                 model = whisper.load_model(Config.WHISPER_MODEL)
                 result = model.transcribe(temp_path, language=language if language != 'auto' else None)
@@ -284,15 +398,18 @@ def transcribe():
             # Generate SRT if requested
             if output_format.lower() == 'srt':
                 srt_content = generate_srt(result.get('segments', []))
+                srt_filename = os.path.splitext(original_filename)[0] + '.srt'
                 response_data = {
-                    'filename': os.path.splitext(filename)[0] + '.srt',
+                    'filename': srt_filename,
+                    'original_filename': original_filename,
                     'srt': srt_content
                 }
             else:
                 response_data = {
                     'text': result.get('text', ''),
                     'language': result.get('language', language if language != 'auto' else 'en'),
-                    'segments': result.get('segments', [])
+                    'segments': result.get('segments', []),
+                    'original_filename': original_filename
                 }
             
             # Log completion time
@@ -332,12 +449,26 @@ def download_srt():
         srt_content = data.get('srt', '')
         filename = data.get('filename', 'transcription.srt')
         
-        # Create temporary SRT file
+        # Ensure filename is properly encoded for download
+        safe_filename = secure_unicode_filename(filename)
+        
+        # Create temporary SRT file with UTF-8 encoding
         with tempfile.NamedTemporaryFile(mode='w', suffix='.srt', delete=False, encoding='utf-8') as temp_file:
             temp_file.write(srt_content)
             temp_path = temp_file.name
         
-        return send_file(temp_path, as_attachment=True, download_name=filename, mimetype='text/plain')
+        # Use proper headers for Unicode filenames
+        response = send_file(
+            temp_path, 
+            as_attachment=True, 
+            download_name=safe_filename,
+            mimetype='text/plain; charset=utf-8'
+        )
+        
+        # Add Content-Disposition header with UTF-8 encoding for better browser support
+        response.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{safe_filename.encode('utf-8').decode('latin1')}"
+        
+        return response
         
     except Exception as e:
         logger.error(f"Download error: {str(e)}")

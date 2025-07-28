@@ -648,18 +648,30 @@
                 progressMessage.textContent = `Processing file (${fileSizeMB.toFixed(1)} MB). Estimated time: ${formatTime(estimatedSeconds)}.`;
             }
 
-            // Time tracking interval
-            const timeInterval = setInterval(() => {
+            // Combined time tracking and progress update interval
+            const updateInterval = setInterval(() => {
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 document.getElementById('elapsedTime').textContent = formatTime(elapsed);
-            }, 1000);
-
-            // Simulate progress with slower increment for large files
-            let progress = 0;
-            const progressIncrement = fileSizeMB > 100 ? 2 : 10;
-            const progressInterval = setInterval(() => {
-                progress += Math.random() * progressIncrement;
-                if (progress > 90) progress = 90;
+                
+                // Calculate progress based on elapsed time vs estimated time
+                let progress = (elapsed / estimatedSeconds) * 100;
+                
+                // Handle overtime scenarios
+                if (elapsed > estimatedSeconds) {
+                    // Show overtime message
+                    progressMessage.textContent = `Processing is taking longer than expected. Please wait...`;
+                    // Keep progress at 95% but add pulsing effect
+                    progress = 95;
+                    document.getElementById('progressFill').style.animation = 'progressPulse 1s infinite';
+                } else {
+                    // Cap progress at 95% until actual completion to avoid showing 100% too early
+                    if (progress > 95) progress = 95;
+                    
+                    // Add a small random variation to make it feel more natural (±2%)
+                    const variation = (Math.random() - 0.5) * 4;
+                    progress = Math.max(0, Math.min(95, progress + variation));
+                }
+                
                 document.getElementById('progressFill').style.width = progress + '%';
             }, 1000);
 
@@ -669,8 +681,7 @@
             })
             .then(response => response.json())
             .then(data => {
-                clearInterval(progressInterval);
-                clearInterval(timeInterval);
+                clearInterval(updateInterval);
                 document.getElementById('progressFill').style.width = '100%';
                 
                 // Show final elapsed time
@@ -690,8 +701,7 @@
                 }, 1000);
             })
             .catch(error => {
-                clearInterval(progressInterval);
-                clearInterval(timeInterval);
+                clearInterval(updateInterval);
                 document.getElementById('progressSection').style.display = 'none';
                 
                 // Handle different types of errors
