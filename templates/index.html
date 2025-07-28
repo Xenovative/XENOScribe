@@ -268,6 +268,38 @@
             color: #39ff14;
             font-size: 1.1em;
         }
+        
+        .time-info {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 20px 0;
+            font-family: 'Orbitron', monospace;
+        }
+        
+        .time-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid #00ff41;
+        }
+        
+        .time-label {
+            font-size: 0.9em;
+            color: #39ff14;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        .time-value {
+            font-size: 1.4em;
+            color: #00ff41;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
 
         .result-section {
             display: none;
@@ -384,6 +416,19 @@
             .header h1 {
                 font-size: 2.2em;
             }
+            
+            .time-info {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .time-item {
+                padding: 8px 15px;
+            }
+            
+            .time-value {
+                font-size: 1.2em;
+            }
         }
 
         /* Cyberpunk glitch effect */
@@ -465,11 +510,21 @@
         </div>
 
         <div class="progress-section" id="progressSection">
-            <h3><i class="fas fa-cog fa-spin"></i> Processing your file...</h3>
+            <h3><i class="fas fa-cog fa-spin"></i> Processing Audio</h3>
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
-            <p>This may take a few minutes depending on file size</p>
+            <div class="time-info">
+                <div class="time-item">
+                    <span class="time-label">Elapsed:</span>
+                    <span class="time-value" id="elapsedTime">00:00</span>
+                </div>
+                <div class="time-item">
+                    <span class="time-label">Estimated:</span>
+                    <span class="time-value" id="estimatedTime">--:--</span>
+                </div>
+            </div>
+            <p id="progressMessage">This may take a few minutes depending on file size</p>
         </div>
 
         <div class="result-section" id="resultSection">
@@ -551,6 +606,12 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
 
         function startTranscription() {
             if (!selectedFile) return;
@@ -566,13 +627,41 @@
             document.getElementById('errorMessage').style.display = 'none';
             transcribeBtn.disabled = true;
 
-            // Simulate progress
+            // Calculate estimated time based on file size
+            const fileSizeMB = selectedFile.size / (1024 * 1024);
+            const estimatedSeconds = Math.max(60, Math.ceil(fileSizeMB * 6)); // Rough estimate: 6 seconds per MB
+            const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+            
+            // Initialize time tracking
+            const startTime = Date.now();
+            document.getElementById('estimatedTime').textContent = formatTime(estimatedSeconds);
+            document.getElementById('elapsedTime').textContent = '00:00';
+            
+            // Update progress message
+            const progressMessage = document.getElementById('progressMessage');
+            if (fileSizeMB > 100) {
+                progressMessage.textContent = `Processing large file (${fileSizeMB.toFixed(1)} MB). This may take ${estimatedMinutes} minutes.`;
+                const warningMsg = `Large file detected. Estimated processing time: ${estimatedMinutes} minutes. Please be patient.`;
+                showError(warningMsg, 'warning');
+                setTimeout(() => document.getElementById('errorMessage').style.display = 'none', 5000);
+            } else {
+                progressMessage.textContent = `Processing file (${fileSizeMB.toFixed(1)} MB). Estimated time: ${formatTime(estimatedSeconds)}.`;
+            }
+
+            // Time tracking interval
+            const timeInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            }, 1000);
+
+            // Simulate progress with slower increment for large files
             let progress = 0;
+            const progressIncrement = fileSizeMB > 100 ? 2 : 10;
             const progressInterval = setInterval(() => {
-                progress += Math.random() * 10;
+                progress += Math.random() * progressIncrement;
                 if (progress > 90) progress = 90;
                 document.getElementById('progressFill').style.width = progress + '%';
-            }, 500);
+            }, 1000);
 
             fetch('/transcribe', {
                 method: 'POST',
@@ -581,7 +670,12 @@
             .then(response => response.json())
             .then(data => {
                 clearInterval(progressInterval);
+                clearInterval(timeInterval);
                 document.getElementById('progressFill').style.width = '100%';
+                
+                // Show final elapsed time
+                const finalElapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('elapsedTime').textContent = formatTime(finalElapsed);
                 
                 setTimeout(() => {
                     document.getElementById('progressSection').style.display = 'none';
@@ -597,8 +691,20 @@
             })
             .catch(error => {
                 clearInterval(progressInterval);
+                clearInterval(timeInterval);
                 document.getElementById('progressSection').style.display = 'none';
-                showError('Network error: ' + error.message);
+                
+                // Handle different types of errors
+                let errorMessage = 'An error occurred during transcription.';
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMessage = 'Network connection lost. Please check your internet connection and try again.';
+                } else if (error.message.includes('timeout')) {
+                    errorMessage = 'Request timed out. The file may be too large. Try with a smaller file or check server status.';
+                } else {
+                    errorMessage = error.message || 'Network error occurred. Please try again.';
+                }
+                
+                showError(errorMessage);
                 transcribeBtn.disabled = false;
             });
         }
@@ -631,9 +737,21 @@
             }
         }
 
-        function showError(message) {
-            document.getElementById('errorMessage').textContent = message;
-            document.getElementById('errorMessage').style.display = 'block';
+        function showError(message, type = 'error') {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+            
+            // Apply different styling based on message type
+            if (type === 'warning') {
+                errorElement.style.backgroundColor = 'rgba(255, 193, 7, 0.1)';
+                errorElement.style.borderColor = '#ffc107';
+                errorElement.style.color = '#ffc107';
+            } else {
+                errorElement.style.backgroundColor = 'rgba(255, 51, 102, 0.1)';
+                errorElement.style.borderColor = '#ff3366';
+                errorElement.style.color = '#ff3366';
+            }
         }
 
         function copyToClipboard() {

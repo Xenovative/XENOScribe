@@ -130,6 +130,16 @@ StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=xenoscribe
 
+# Timeout settings for long transcriptions
+TimeoutStartSec=60
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
 # Security options
 NoNewPrivileges=true
 PrivateTmp=true
@@ -204,11 +214,11 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         
-        # Timeouts
-        proxy_connect_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-        send_timeout 300s;
+        # Timeouts - Extended for long audio transcriptions
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 3600s;  # 1 hour
+        proxy_read_timeout 3600s;  # 1 hour
+        send_timeout 3600s;        # 1 hour
     }
 
     # Increase max upload size to 2G

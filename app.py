@@ -3,6 +3,8 @@ import tempfile
 import whisper
 import openai
 import hashlib
+import signal
+import time
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 import logging
@@ -95,6 +97,33 @@ def login_required(f):
             return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
     return decorated_function
+
+class TimeoutError(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Operation timed out")
+
+def with_timeout(timeout_seconds):
+    """Decorator to add timeout to functions"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set up the timeout
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout_seconds)
+            
+            try:
+                result = func(*args, **kwargs)
+                signal.alarm(0)  # Cancel the alarm
+                return result
+            except TimeoutError:
+                logger.error(f"Function {func.__name__} timed out after {timeout_seconds} seconds")
+                raise
+            finally:
+                signal.signal(signal.SIGALRM, old_handler)
+        return wrapper
+    return decorator
 
 def format_timestamp(seconds):
     """Convert seconds to SRT timestamp format"""
@@ -221,14 +250,20 @@ def transcribe():
             file.save(temp_file.name)
             temp_path = temp_file.name
         
-        logger.info(f"Transcribing file: {filename}")
+        # Get file size for logging
+        file_size = os.path.getsize(temp_path)
+        logger.info(f"Transcribing file: {filename} (Size: {file_size / (1024*1024):.1f} MB)")
+        
+        start_time = time.time()
         
         try:
             # Transcribe using OpenAI API if configured
             if Config.USE_OPENAI_API and Config.OPENAI_API_KEY:
+                logger.info("Using OpenAI Whisper API for transcription")
                 result = transcribe_file_with_openai(temp_path, language)
             else:
                 # Fall back to local Whisper model
+                logger.info(f"Using local Whisper model: {Config.WHISPER_MODEL}")
                 model = whisper.load_model(Config.WHISPER_MODEL)
                 result = model.transcribe(temp_path, language=language if language != 'auto' else None)
                 
@@ -260,13 +295,22 @@ def transcribe():
                     'segments': result.get('segments', [])
                 }
             
-            logger.info(f"Transcription successful for {filename}")
-            response = jsonify(response_data)
+            # Log completion time
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.info(f"Transcription successful for {filename} (Duration: {duration:.1f}s)")
             
+            response = jsonify(response_data)
             return response
             
+        except TimeoutError:
+            logger.error(f"Transcription timed out for {filename}")
+            return jsonify({'error': 'Transcription timed out. File may be too large or complex.'}), 504
         except Exception as e:
-            logger.error(f"Error during transcription: {str(e)}")
+            logger.error(f"Error during transcription of {filename}: {str(e)}")
+            # Check if it's a memory error
+            if 'memory' in str(e).lower() or 'out of memory' in str(e).lower():
+                return jsonify({'error': 'File too large for available memory. Try a smaller file or use a more powerful server.'}), 413
             return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
             
         finally:
